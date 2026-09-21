@@ -15,12 +15,12 @@ from pyspark.sql.functions import col
 from pyspark.sql.types import StringType, IntegerType, FloatType, DateType
 
 
-def process_silver_table(snapshot_date_str, bronze_lms_directory, silver_loan_daily_directory, spark):
+def process_silver_table(snapshot_date_str, bronze_lms_directory, silver_lms_daily_directory, spark):
     # prepare arguments
     snapshot_date = datetime.strptime(snapshot_date_str, "%Y-%m-%d")
     
     # connect to bronze table
-    partition_name = "bronze_loan_daily_" + snapshot_date_str.replace('-','_') + '.csv'
+    partition_name = "bronze_daily_" + snapshot_date_str.replace('-','_') + '.csv'
     filepath = bronze_lms_directory + partition_name
     df = spark.read.csv(filepath, header=True, inferSchema=True)
     print('loaded from:', filepath, 'row count:', df.count())
@@ -54,7 +54,7 @@ def process_silver_table(snapshot_date_str, bronze_lms_directory, silver_loan_da
 
     # save silver table - IRL connect to database to write
     partition_name = "silver_loan_daily_" + snapshot_date_str.replace('-','_') + '.parquet'
-    filepath = silver_loan_daily_directory + partition_name
+    filepath = silver_lms_daily_directory + partition_name
     df.write.mode("overwrite").parquet(filepath)
     # df.toPandas().to_parquet(filepath,
     #           compression='gzip')
