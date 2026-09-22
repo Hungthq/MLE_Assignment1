@@ -38,6 +38,12 @@ def process_silver_table(snapshot_date_str, bronze_attributes_directory, silver_
     "Age",
     F.abs(F.regexp_replace(F.col("Age"), "[_-]", "").cast(IntegerType()))
     )
+    # values that survive stripping but are still not a real age (e.g. "-500" -> 500, "3843_" -> 3843)
+    # get set to null rather than kept as a wrong number
+    df = df.withColumn(
+        "Age",
+        F.when(F.col("Age").between(14, 100), F.col("Age"))
+    )
     
     # Dictionary specifying columns and their desired datatypes
     column_type_map = {

@@ -39,23 +39,21 @@ def process_silver_table(snapshot_date_str, bronze_financials_directory, silver_
     "Monthly_Inhand_Salary", F.col("Monthly_Inhand_Salary").cast(DecimalType(10,2))
     )
 
-    ## Remove "_" and "-" in Num_of_Loan, cast to int, and get absolute value
-    df = df.withColumn(
-    "Num_of_Loan",
-    F.regexp_replace(F.col("Num_of_Loan"), "[_-]", "").cast(IntegerType())
-    )
-    
-    ## Fill blank Type_of_Loan by "Not Specified"
-    ## catch empty strings, whitespace-only values, nulls, and underscore sequences
-    df = df.withColumn(
-    "Type_of_Loan",
-    F.when(
-        F.col("Type_of_Loan").isNull()
-        | (F.trim(F.col("Type_of_Loan")) == "")
-        | (F.col("Type_of_Loan").rlike("^[_\\s]+$")),
-        "Not Specified"
-    ).otherwise(F.col("Type_of_Loan"))
-    )
+    ## Re-calculate Num_of_Loan
+    #df = df.withColumn(
+    # 1. Clean out the oxford / conjunction 'and ' so delimiters become purely commas
+    #"cleaned_loans",
+    #F.regexp_replace(F.trim(F.col("Type_of_Loan")), r",?\s+and\s+", ", ")
+    #).withColumn(
+    # 2. Split by comma and count elements, handling nulls/empty strings
+    #"Num_of_Loan",
+    #F.when(
+    #    (F.col("Type_of_Loan").isNull()) | (F.trim(F.col("Type_of_Loan")) == ""), 0
+    #).otherwise(
+    #    F.size(F.split(F.col("cleaned_loans"), r"\s*,\s*"))
+    #)
+    #).drop("cleaned_loans")
+
 
     ## Remove "_" and "-" in Num_of_Delayed_Payment, cast to int, and get absolute value
     df = df.withColumn(
@@ -120,6 +118,8 @@ def process_silver_table(snapshot_date_str, bronze_financials_directory, silver_
     F.col("Monthly_Balance").cast(DecimalType(10,2))
     )
     
+
+
     # Dictionary specifying columns and their desired datatypes
     column_type_map = {
         "Customer_ID": StringType(),
