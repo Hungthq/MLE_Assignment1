@@ -50,9 +50,11 @@ print("#"*50)
 snapshot_date_str = "2023-01-01"
 
 start_date_str = "2023-01-01"
-end_date_str = "2023-03-01"
+end_date_str = "2025-01-01"        # last application month in attributes / financials
+lms_end_date_str = "2025-11-01"    # last loan snapshot: loans from Jan 2025 reach month 6 in Jul 2025
 print("Start date:   ", start_date_str)
 print("End date:     ", end_date_str)
+print("LMS end date: ", lms_end_date_str)
 
 
 # %%
@@ -81,6 +83,7 @@ def generate_first_of_month_dates(start_date_str, end_date_str):
     return first_of_month_dates
 
 dates_str_lst = generate_first_of_month_dates(start_date_str, end_date_str)
+lms_dates_str_lst = generate_first_of_month_dates(start_date_str, lms_end_date_str)
 
 
 # %% [markdown]
@@ -90,7 +93,7 @@ print("Build Bronze Table")
 print("#"*50 + "\n")
 # %%
 # create bronze datalake
-bronze_lms_directory = "datamart/bronze/lms/"
+bronze_lms_directory = "datamart/bronze/lms_loan_daily/"
 bronze_clickstream_directory = "datamart/bronze/feature_clickstream/"
 bronze_attributes_directory = "datamart/bronze/features_attributes/"
 bronze_financials_directory = "datamart/bronze/features_financials/"
@@ -123,7 +126,7 @@ print("\n" + "*"*50)
 print("Processing loan data")
 print("*"*50 )
 
-for date_str in dates_str_lst:
+for date_str in lms_dates_str_lst:
     utils.data_processing_bronze.process_bronze_table(date_str, lms_file, bronze_lms_directory, spark)
 
 # %%
@@ -182,7 +185,7 @@ if not os.path.exists(silver_clickstream_daily_directory):
 print("\n" + "*"*50)
 print("Processing loan data")
 print("*"*50)
-for date_str in dates_str_lst:
+for date_str in lms_dates_str_lst:
     utils.data_processing_silver.process_lms(date_str, bronze_lms_directory, silver_lms_daily_directory, spark)
 
 
@@ -253,7 +256,7 @@ plt.title('DPD: '+ str(dpd))
 plt.xlabel('mob')
 plt.ylabel('bad rate')
 plt.grid(True)
-plt.show()
+plt.savefig('datamart/bad_rate_by_mob.png'); plt.close()
 
 
 # %%
@@ -293,7 +296,7 @@ for date_str in dates_str_lst:
 print("\n" + "*"*50)
 print("Processing label store")
 print("*"*50)
-for date_str in dates_str_lst:
+for date_str in lms_dates_str_lst:
     utils.data_processing_gold.process_label_store(date_str, silver_lms_daily_directory, gold_label_store_directory, spark)
 
 

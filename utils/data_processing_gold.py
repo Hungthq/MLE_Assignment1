@@ -21,31 +21,28 @@ def process_feature_store(date_str, silver_attributes_daily_directory, silver_fi
     # prepare arguments
     #date_str = datetime.strptime(date_str, "%Y-%m-%d"
     
-    # read every partition of each silver table (wildcard covers all snapshot_date files)
-    #lms = spark.read.parquet(silver_lms_daily_directory + "*")
-    attr = spark.read.parquet(silver_attributes_daily_directory + "*")
-    fin = spark.read.parquet(silver_financials_daily_directory + "*")
-
-    # read clickstream table
+    # one partition = the customers who applied for a loan in this month (snapshot_date = application date)
     partition_name = "silver_daily_" + date_str.replace('-','_') + '.parquet'
-    filepath = silver_clickstream_daily_directory + partition_name
-    click = spark.read.parquet(filepath)
-    print('attributes:', attr.count(), 'financials:', fin.count(), 'clickstream:', click.count())
+    attr = spark.read.parquet(silver_attributes_daily_directory + partition_name)
+    fin = spark.read.parquet(silver_financials_daily_directory + partition_name)
 
     # PII: Name and SSN live in silver attributes but must never reach a feature store
     attr = attr.drop("Name", "SSN")
+    fin = fin.drop("snapshot_date")  # same date as attr; keep a single copy
 
-    # attributes/financials each carry their OWN snapshot_date (the customer's origination date) -
-    # a different thing from lms's snapshot_date (this specific installment's date). Since we're
-    # deliberately joining on Customer_ID only (not date), drop these first: left unmerged, both
-    # would collide with lms's snapshot_date and break the later clickstream join and the write.
-    attr = attr.drop("snapshot_date")
-    fin = fin.drop("snapshot_date")
+    # attributes + financials: one row per applicant (1:1 on Customer_ID)
+    click = attr.join(fin, on="Customer_ID", how="inner")
 
-    # attributes/financials: one row per customer -> safe many-to-one join on Customer_ID alone,
-    # no snapshot_date needed (every lms installment for a customer gets the same, static values)
-    click = click.join(attr, on="Customer_ID", how="inner")
-    click = click.join(fin, on="Customer_ID", how="inner")
+    # clickstream: point-in-time, SAME month as the application only (never a later month),
+    # LEFT join so applicants without clickstream (loans from Jul 2024, file ends Dec 2024) are kept
+    click_path = silver_clickstream_daily_directory + partition_name
+    if os.path.exists(click_path):
+        clk = spark.read.parquet(click_path)
+        click = click.join(clk, on=["Customer_ID", "snapshot_date"], how="left")
+    else:
+        for i in range(1, 21):
+            click = click.withColumn(f"fe_{i}", F.lit(None).cast(IntegerType()))
+    print('attributes+financials:', attr.count(), '| rows with clickstream:', click.filter(col("fe_1").isNotNull()).count())
 
     # ---- feature engineering: project-specific, built for the loan default model ----
     # (same logic as gold_ft_store_customer - kept here too since this table has its own,
@@ -84,6 +81,9 @@ def process_feature_store(date_str, silver_attributes_daily_directory, silver_fi
     click = click.withColumn("Credit_Mix_MinAmt", F.concat_ws("_", col("Credit_Mix"), col("Payment_of_Min_Amount")))
 
 
+    # raw text columns have been parsed into numeric features above
+    click = click.drop("Type_of_Loan", "Credit_History_Age")
+
     print('final row count:', click.count())
 
     # save gold table - IRL connect to database to write
@@ -96,7 +96,7 @@ def process_feature_store(date_str, silver_attributes_daily_directory, silver_fi
 
 
 def process_label_store(date_str, silver_lms_daily_directory,
-                       gold_label_store_directory, spark):
+                       gold_label_store_directory, spark, dpd=30, mob=6):
 
     # connect to silver lms table
     partition_name = "silver_loan_daily_" + date_str.replace('-','_') + '.parquet'
@@ -104,9 +104,14 @@ def process_label_store(date_str, silver_lms_daily_directory,
     lms = spark.read.parquet(filepath)
     print('loaded from:', filepath, 'row count:', lms.count())
 
-    # Drop unwanted columns
-    lms = lms.drop("loan_start_date", "tenure", "installment_num", "loan_amt", "due_amt", "paid_amt", "overdue_amt", "balance", "snapshot_date")
-    print('final row count:', lms.count(), '(should equal the lms row count after the cutoff filter)')
+    # label = 1 if the loan is dpd+ days past due at month-on-book `mob`
+    lms = lms.filter(col("mob") == mob)
+    lms = lms.withColumn("label", F.when(col("dpd") >= dpd, 1).otherwise(0).cast(IntegerType()))
+    lms = lms.withColumn("label_def", F.lit(str(dpd) + "dpd_" + str(mob) + "mob").cast(StringType()))
+
+    # loan_start_date = application date = the feature store's snapshot_date (join key)
+    lms = lms.select("loan_id", "Customer_ID", "loan_start_date", "label", "label_def", "snapshot_date")
+    print('final row count:', lms.count())
 
     # save gold table - IRL connect to database to write
     os.makedirs(gold_label_store_directory, exist_ok=True)
@@ -115,5 +120,3 @@ def process_label_store(date_str, silver_lms_daily_directory,
     print('saved to:', filepath)
 
     return lms
-
-    
