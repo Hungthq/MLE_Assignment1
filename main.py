@@ -1,18 +1,8 @@
 # %%
 import os
-import glob
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-import random
-from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
-import pprint
-import pyspark
-import pyspark.sql.functions as F
+from datetime import datetime
 
-from pyspark.sql.functions import col
-from pyspark.sql.types import StringType, IntegerType, FloatType, DateType, DecimalType
+import pyspark
 
 import utils.data_processing_bronze
 import utils.data_processing_silver
@@ -214,53 +204,7 @@ print("*"*50)
 for date_str in dates_str_lst:
     utils.data_processing_silver.process_clickstream(date_str, bronze_clickstream_directory, silver_clickstream_daily_directory, spark)
 
-# %% [markdown]
-# ## EDA on credit labels
-
-# %%
-# set dpd label definition
-dpd = 30
-
-# Path to the folder containing CSV files
-folder_path = silver_lms_daily_directory
-
-# Read all CSV files into a single DataFrame
-files_list = [folder_path+os.path.basename(f) for f in glob.glob(os.path.join(folder_path, '*'))]
-df = spark.read.option("header", "true").parquet(*files_list)
-
-# filter only completed loans
-df = df.filter(col("loan_start_date") < datetime.strptime("2024-01-01", "%Y-%m-%d"))
-
-# create dpd flag if more than dpd
-df = df.withColumn("dpd_flag", F.when(col("dpd") >= dpd, 1).otherwise(0))
-
-# actual bads 
-actual_bads_df = df.filter(col("installment_num") == 10)
-
-# prepare for analysis
-# df = df.filter(col("installment_num") < 10)
-
-# visualise bad rate
-pdf = df.toPandas()
-
-# Group by col_A and count occurrences in col_B
-grouped = pdf.groupby('mob')['dpd_flag'].mean()
-
-# Sort the index (x-axis) of the grouped DataFrame
-grouped = grouped.sort_index()
-
-# Plotting
-grouped.plot(kind='line', marker='o')
-
-plt.title('DPD: '+ str(dpd))
-plt.xlabel('mob')
-plt.ylabel('bad rate')
-plt.grid(True)
-plt.savefig('datamart/bad_rate_by_mob.png'); plt.close()
-
-
-# %%
-#df.show()
+# EDA on credit labels (bad rate by MOB) has moved to eda.ipynb; run it after this pipeline.
 
 # %% [markdown]
 print("\n" + "#"*50)
